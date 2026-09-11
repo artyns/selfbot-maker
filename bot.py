@@ -932,3 +932,230 @@ async def login_command(event):
 
     await create_qr_login(
         user_id,
+        event.chat_id
+    )
+
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"^/status$"
+    )
+)
+async def status_command(event):
+
+    user_id = event.sender_id
+
+    client = user_clients.get(
+        user_id
+    )
+
+    if not client:
+
+        row = get_user(user_id)
+
+        if not row:
+
+            await event.reply(
+                "🔴 No account connected.\n\n"
+                "Use /login"
+            )
+
+            return
+
+        session = load_session(
+            user_id
+        )
+
+        if session:
+
+            client = await start_userbot(
+                user_id,
+                session
+            )
+
+    if not client:
+
+        await event.reply(
+            "🔴 Userbot is offline."
+        )
+
+        return
+
+    try:
+
+        me = await client.get_me()
+
+        await event.reply(
+            (
+                "🟢 <b>Userbot Online</b>\n\n"
+                f"👤 {me.first_name or ''}\n"
+                f"🆔 <code>{me.id}</code>\n"
+                f"📛 @{me.username or 'none'}"
+            ),
+            parse_mode="html"
+        )
+
+    except Exception:
+
+        await event.reply(
+            "🔴 Userbot is offline."
+        )
+
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"^/stop$"
+    )
+)
+async def stop_command(event):
+
+    user_id = event.sender_id
+
+    client = user_clients.get(
+        user_id
+    )
+
+    if not client:
+
+        await event.reply(
+            "🔴 Your userbot isn't running."
+        )
+
+        return
+
+    try:
+
+        await client.disconnect()
+
+    except Exception:
+        pass
+
+    user_clients.pop(
+        user_id,
+        None
+    )
+
+    await event.reply(
+        "⏹ <b>Your userbot has been stopped.</b>",
+        parse_mode="html"
+    )
+
+
+@bot.on(
+    events.NewMessage(
+        pattern=r"^/logout$"
+    )
+)
+async def logout_command(event):
+
+    user_id = event.sender_id
+
+    client = user_clients.get(
+        user_id
+    )
+
+    if client:
+
+        try:
+            await client.log_out()
+
+        except Exception:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+        user_clients.pop(
+            user_id,
+            None
+        )
+
+    delete_user(
+        user_id
+    )
+
+    user_features.pop(
+        user_id,
+        None
+    )
+
+    await event.reply(
+        """
+🗑 <b>Account disconnected.</b>
+
+Your stored session has been removed.
+
+Use /login to connect again.
+""",
+        parse_mode="html"
+    )
+
+
+# ============================================================
+# AUTO LOAD USERS
+# ============================================================
+
+async def load_existing_users():
+
+    rows = db.execute(
+        """
+        SELECT telegram_id
+        FROM users
+        WHERE enabled = 1
+        """
+    ).fetchall()
+
+    for (owner_id,) in rows:
+
+        session = load_session(
+            owner_id
+        )
+
+        if not session:
+            continue
+
+        client = await start_userbot(
+            owner_id,
+            session
+        )
+
+        if client:
+
+            log.info(
+                "Restored userbot %s",
+                owner_id
+            )
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+async def main():
+
+    log.info(
+        "Starting bot..."
+    )
+
+    await bot.start(
+        bot_token=BOT_TOKEN
+    )
+
+    log.info(
+        "Bot started."
+    )
+
+    await load_existing_users()
+
+    log.info(
+        "All userbots loaded."
+    )
+
+    await bot.run_until_disconnected()
+
+
+if __name__ == "__main__":
+
+    asyncio.run(
+        main()
+    )
